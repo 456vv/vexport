@@ -78,8 +78,8 @@ func TestFollowSetWants(t *testing.T) {
 	if (&followSet{module: "demo", moduleAll: true, maxDepth: 0}).wants("demo/x", false) {
 		t.Error("depth 0 must disable following")
 	}
-	if !(&followSet{std: true, stdOK: true, maxDepth: 8}).wants("fmt", true) {
-		t.Error("std rule should match with -follow-std")
+	if !(&followSet{std: true, maxDepth: 8}).wants("fmt", true) {
+		t.Error("std true allow std packages")
 	}
 	neg := &followSet{module: "demo", moduleAll: true, exclude: []string{"demo/internal/x/**"}, maxDepth: 8}
 	if neg.wants("demo/internal/x/y", false) {

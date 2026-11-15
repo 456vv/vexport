@@ -289,7 +289,6 @@ type Config struct {
 	IncludeCtors   bool
 	Follow         []string
 	FollowDepth    int // package hops; -1 = unlimited, 0 = no inlining
-	FollowStd      bool
 	Rewrites       []string
 	Conflict       ConflictMode
 	MaxDecls       int // hard stop against runaway inlining, 0 = unlimited
@@ -408,7 +407,7 @@ func (c *Config) Normalize() error {
 
 // compileFollow builds the follow matcher for a module path.
 func (c *Config) compileFollow(modulePath string) (*followSet, error) {
-	f := &followSet{module: modulePath, maxDepth: c.FollowDepth, stdOK: c.FollowStd}
+	f := &followSet{module: modulePath, maxDepth: c.FollowDepth}
 	for _, raw := range c.Follow {
 		for _, item := range splitList(raw) {
 			item = strings.TrimSpace(item)
@@ -458,7 +457,6 @@ func (c *Config) compileFollow(modulePath string) (*followSet, error) {
 type followSet struct {
 	all       bool
 	std       bool
-	stdOK     bool
 	moduleAll bool
 	module    string
 	include   []string
@@ -474,27 +472,25 @@ func (f *followSet) wants(importPath string, isStd bool) bool {
 	if f.maxDepth == 0 {
 		return false
 	}
-	if isStd && (!f.stdOK || !f.std) {
-		return false
-	}
 	for _, pat := range f.exclude {
 		if matchImport(pat, importPath) {
 			return false
 		}
 	}
-	if f.all {
-		return true
-	}
-	if isStd && f.std {
-		return true
-	}
-	if f.moduleAll && f.module != "" && (importPath == f.module || strings.HasPrefix(importPath, f.module+"/")) {
-		return true
-	}
 	for _, pat := range f.include {
 		if matchImport(pat, importPath) {
 			return true
 		}
+	}
+	if isStd {
+		return f.std // 只认显式 -follow std
+	}
+	if f.all {
+		return true
+	}
+	if f.moduleAll && f.module != "" &&
+		(importPath == f.module || strings.HasPrefix(importPath, f.module+"/")) {
+		return true
 	}
 	return false
 }

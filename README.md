@@ -22,7 +22,7 @@
 ## 特性
 
 - **类型驱动提取。** 声明通过 `go/types` 对象识别，所以 `Type.Method` 选择器、嵌入字段、iota 块、多名 `var`/`const` spec 都能正确处理。
-- **跨包递归内联**（`-follow`），带深度限制（`-follow-depth`）和显式排除模式。
+- **跨包递归内联**（`-follow`），带深度限制（`-follow-depth`）和显式排除模式。标准库默认不跟随——`-follow std` 跟随全部，`-follow fmt` 这类精确路径按需跟随单个 std 包。
 - **构建矩阵支持。** 按 target 提取一次（`-targets linux/amd64,windows/amd64,darwin/arm64+tag`），或者让 `-targets auto` 从 `//go:build` 行和文件名后缀自动推导最小覆盖集。
 - **约束感知输出。** 需要时生成正确的 `//go:build` 表达式（以及旧的 `// +build` 形式），可移植的文件保持无 tag。
 - **导入重写。** 用 `-rewrite old=new` 或 `-rewrite example.com/old/=example.com/new/` 重命名或迁移 import。
@@ -59,7 +59,7 @@ go build -o vexport .
 vexport run -dir . -pkg ./internal/user -names User -o ./gen
 ```
 
-提取当前模块及其所有依赖的全部导出声明：
+提取当前模块的全部导出声明（不含标准库和第三方包）：
 
 ```sh
 vexport run -dir . -pkg ./user -all -follow module -o ./gen
@@ -105,7 +105,6 @@ vexport help              打印完整帮助
 | 旗标 | 说明 |
 | --- | --- |
 | `-targets LIST` | `linux/amd64,windows/amd64,darwin/arm64+tag,tag`，或 `auto` 扫描目标包并推导最小覆盖集。 |
-| `-follow-std` | 允许跟随进标准库。 |
 
 ### 选择
 
@@ -113,9 +112,8 @@ vexport help              打印完整帮助
 | --- | --- |
 | `-methods` | 复制所选类型的方法（默认 `true`）。 |
 | `-ctors` | 复制所选类型的构造函数（默认 `true`）。 |
-| `-follow LIST` | 递归内联依赖：`module`、`all`、`std`、`!exclude`、`github.com/x/y`、`example.com/x/*`。 |
+| `-follow LIST` | 递归内联依赖：`module`、`all`、`std`、`!exclude`、`github.com/x/y`、`github.com/x/**`，或 `fmt` 这样的精确 std 包路径。 |
 | `-follow-depth N` | 跟随时跨包最大跳数（`-1` = 不限，`0` = 关闭，默认 `8`）。 |
-| `-follow-std` | 允许跟随进标准库。 |
 | `-rewrite LIST` | 导入路径重写：`old=new` 或 `example.com/old/=example.com/new/`。 |
 | `-conflict MODE` | `keep`（默认）、`prefix` 或 `error`。 |
 | `-max-decls N` | 内联声明的硬上限（默认 `5000`，`0` = 不限）。 |
@@ -155,6 +153,39 @@ vexport help              打印完整帮助
 
 ---
 
+## 标准库跟随
+
+标准库默认**不**跟随——`strings`、`fmt`、`time` 这些保持为 import。需要内联时，有两档选择：
+
+**精确跟随某个 std 包**（推荐，闭包可控）：
+
+```sh
+vexport run -dir . -pkg ./internal/util -names Sanitize \
+    -follow fmt -o ./gen
+```
+
+`fmt` 及其它被 `Sanitize` 引用的 std 包里的声明会被复制进来，`fmt.` 限定符被剥离。`strings` 没被点名也没被闭包触及，保持 import。
+
+**跟随整个标准库**（重，慎用）：
+
+```sh
+vexport run -dir . -pkg ./internal/util -names Sanitize \
+    -follow std -o ./gen
+```
+
+所有被闭包触达的 std 包都会内联。`fmt` 会牵出 `internal/fmtsort`、`reflect`，`reflect` 又牵出 `internal/abi`、`unsafe`……一个 `-names Foo -follow all -follow std` 很容易撞上 `-max-decls`（默认 5000）或卡在类型检查里。配合 `-follow-depth` 和 `-max-decls` 兜底。
+
+**`-follow all` 不碰 std。** 想批量跟随 module 外的包、又包含标准库，把 `std` 显式写上：
+
+```sh
+vexport run -dir . -pkg ./cmd/app -names Config \
+    -follow all -follow std -max-decls 2000 -o ./gen
+```
+
+`std` 和精确路径可以混写，`-follow fmt,encoding/json` 等价于 `-follow fmt -follow encoding/json`。
+
+---
+
 ## 示例
 
 ### 提取单个类型及其依赖
@@ -172,7 +203,7 @@ vexport run -dir . -pkg ./cmd/app -names Config \
     -follow module -o ./internal/config -verify
 ```
 
-`-follow module` 会把从 `Config` 出发、在当前 Go module 内可达的一切都拉进来。`-verify` 在写入前于宿主机上 build 结果。
+`-follow module` 会把从 `Config` 出发、在当前 Go module 内可达的一切都拉进来。标准库和第三方包保持 import。`-verify` 在写入前于宿主机上 build 结果。
 
 ### 处理平台特定矩阵
 
@@ -252,7 +283,7 @@ write   → []File          磁盘上的文件（或 stdout）
 ```
 
 1. **Load。** 每个 target 跑自己的 `go list`，拿到自己的 `token.FileSet` 和自己的 `go/types` 信息。target 之间完全独立，所以加载是尴尬并行的。
-2. **Resolve。** 种子按名字在包索引里查。每个引用解析成 `types.Object`；如果对象所在的包匹配 `-follow`，它的声明就进入闭包。`//go:build` 约束跟着声明走。
+2. **Resolve。** 种子按名字在包索引里查。每个引用解析成 `types.Object`；如果对象所在的包匹配 `-follow`，它的声明就进入闭包。`//go:build` 约束跟着声明走。`-follow` 的匹配分四种：精确 include（`fmt`、`github.com/x/y`）、通配（`github.com/x/**`）、`module`（当前 module 的所有子包）、`std`（全部标准库）。
 3. **Emit。** 声明通过复制源码区间并应用记录的编辑来渲染：剥掉内联的限定符、重命名别名、给 dot-import 的标识符加限定、应用冲突重命名。variant 按文本相同分组，每组得到从声明源码约束*与*运算推导出的 build 约束。
 4. **Verify**（可选）。文件写进模块内的临时包，用真实工具链 build，然后删除。`package main` 用 `go test -c` 编译，所以不要求 `func main`。
 5. **Write。** 带安全检查：绝不覆盖不是它生成的文件，绝不写重复文件名，绝不把多个文件写进 stdout。
@@ -327,6 +358,4 @@ write   → []File          磁盘上的文件（或 stdout）
 
 ## 许可证
 
-apache 2.0
-
----
+MIT —— 见 [LICENSE](./LICENSE)。

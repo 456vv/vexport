@@ -276,11 +276,10 @@ func bindFlags(fs *flag.FlagSet, cfg *Config) *flagValues {
 
 	fs.BoolVar(&cfg.IncludeMethods, "methods", cfg.IncludeMethods, "同时复制所选类型的方法")
 	fs.BoolVar(&cfg.IncludeCtors, "ctors", cfg.IncludeCtors, "同时复制所选类型的构造函数")
-	fs.StringVar(&nv.follow, "follow", "", "递归内联依赖：module、all、std、!exclude、github.com/x/y")
+	fs.StringVar(&nv.follow, "follow", "", "递归内联依赖：module、all、std、!exclude、github.com/x/y、github.com/x/**")
 	fs.IntVar(&cfg.FollowDepth, "follow-depth", cfg.FollowDepth, "跟随时跨包最大跳数（-1 = 不限，0 = 关闭）")
-	fs.BoolVar(&cfg.FollowStd, "follow-std", false, "允许跟随标准库包")
 	fs.StringVar(&nv.rewrite, "rewrite", "", "导入路径重写：old=new,example.com/old/=example.com/new/")
-	fs.StringVar(&nv.conflict, "conflict", string(cfg.Conflict), "名称冲突策略：keep|prefix|error")
+	fs.StringVar(&nv.conflict, "conflict", string(cfg.Conflict), "名称冲突策略：keep（默认，如果冲突保留import） | prefix（加前缀名） | error（错误退出）")
 	fs.IntVar(&cfg.MaxDecls, "max-decls", cfg.MaxDecls, "内联声明的硬限制（0 = 不限）")
 	fs.BoolVar(&cfg.Strict, "strict", false, "生成结果含import 第三方包（当前 Go module 和标准库之外）时失败（文件已写入，退出码 1）")
 
@@ -381,11 +380,10 @@ func usage(w io.Writer) {
 选择：
   -methods               复制所选类型的方法（默认 true）
   -ctors                 复制所选类型的构造函数（默认 true）
-  -follow LIST           递归内联依赖：module、all、std、!exclude、github.com/x/y
+  -follow LIST           递归内联依赖：module、all、std、!exclude、github.com/x/y、github.com/x/**
   -follow-depth N        跟随时跨包跳数（-1 不限，0 关闭，默认 8）
-  -follow-std            允许跟随标准库包
   -rewrite LIST          导入路径重写：old=new 或 example.com/old/=example.com/new/
-  -conflict MODE         名称冲突策略：keep（默认） | prefix | error
+  -conflict MODE         名称冲突策略：keep（默认，如果冲突保留import） | prefix（加前缀名） | error（错误退出）
   -max-decls N           内联声明的硬限制（默认 5000，0 = 不限）
   -strict                生成结果含 import 第三方包（当前 Go module 和标准库之外）时失败（文件已写入，退出码 1）
 

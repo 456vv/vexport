@@ -142,9 +142,9 @@ func TestFollowSetInteractions(t *testing.T) {
 		}
 	})
 	t.Run("stdOK gates std", func(t *testing.T) {
-		f := &followSet{std: true, stdOK: false, maxDepth: 8}
-		if f.wants("fmt", true) {
-			t.Fatal("std rule must require stdOK")
+		f := &followSet{std: true, maxDepth: 8}
+		if !f.wants("fmt", true) {
+			t.Fatal("std true allow std packages")
 		}
 	})
 	t.Run("empty means nothing", func(t *testing.T) {
